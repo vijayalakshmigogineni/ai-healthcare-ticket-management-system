@@ -401,6 +401,3 @@ Vijayalakshmi Gogineni
 
 B.Tech Computer Science and Engineering
 
-AI-Powered  Workflow Automation Project using n8n
-=======
-
