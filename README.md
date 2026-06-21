@@ -1,5 +1,5 @@
 
-# AI-Powered Healthcare Communication & Ticket Management System
+# Ticket Management System
 
 ## Project Overview
 
@@ -401,7 +401,6 @@ Vijayalakshmi Gogineni
 
 B.Tech Computer Science and Engineering
 
-AI-Powered Healthcare Workflow Automation Project
+AI-Powered  Workflow Automation Project using n8n
 =======
-# ai-healthcare-ticket-management-system
-AI-powered healthcare communication and ticket management workflow built using n8n.
+
