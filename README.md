@@ -1,5 +1,5 @@
 
-# Ticket Management System
+# Ticket Management Workflow
 
 ## Project Overview
 
