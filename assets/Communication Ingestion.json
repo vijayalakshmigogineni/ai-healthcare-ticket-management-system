@@ -1,0 +1,459 @@
+{
+  "name": "Communication Ingestion",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -48
+      ],
+      "id": "c45c4f5c-ea52-46a2-b7e3-aff96c29783a",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "const clientMappings = {\n  \"abc@probeps.com\": {\n    clientId: \"client-001\",\n    clientName: \"ABC Pediatrics\"\n  },\n  \"sunrise@probeps.com\": {\n    clientId: \"client-002\",\n    clientName: \"Sunrise Clinic\"\n  }\n};\n\nfor (const item of $input.all()) {\n\n  const communicationAddress = item.json.to;\n\n  const client = clientMappings[communicationAddress];\n\n  if (client) {\n    item.json.clientId = client.clientId;\n    item.json.clientName = client.clientName;\n  } else {\n    item.json.clientId = \"unknown\";\n    item.json.clientName = \"Unknown Client\";\n  }\n\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        -48
+      ],
+      "id": "8fdcef2d-65ac-41ed-ab27-018eb8ecd395",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a healthcare communication classifier.\n\nClient Name: {{$json.clientName}}\n\nSubject: {{$json.subject}}\n\nBody: {{$json.body}}\n\nClassify this communication.\n\nCategories:\n- Claim Status\n- Denial Management\n- Eligibility Verification\n- Prior Authorization\n- Payment Posting\n- Patient Balance\n- Technical Support\n- General Inquiry\n\nPriority Rules:\n- Denied -> High\n- Prior Authorization -> High\n- Status Request -> Medium\n- Everything else -> Low\n\nReturn ONLY valid JSON.\n\nDo not use markdown.\nDo not use ```json.\nDo not add explanations.\n\nExample:\n{\n  \"category\": \"\",\n  \"priority\": \"\",\n  \"confidence\": 0,\n  \"reason\": \"\"\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        224,
+        -48
+      ],
+      "id": "4bcbe58f-a293-402e-ad39-7b1bd4058bec",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        96,
+        160
+      ],
+      "id": "43e499c2-32ff-4bfd-9d9d-8be07f1fb565",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "Wpq2Y1tZnDF3e8pj",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "be7eed31-d469-4350-bfd5-3a6dee1e970b",
+              "name": "messageId",
+              "value": "email-001",
+              "type": "string"
+            },
+            {
+              "id": "221008b1-f8a3-4f23-8ab1-e9f43aaf18d5",
+              "name": "from",
+              "value": "manager@abcpediatrics.com",
+              "type": "string"
+            },
+            {
+              "id": "ffac9d01-06ff-4470-98a4-fa5ff0a0c45e",
+              "name": "to",
+              "value": "abc@probeps.com",
+              "type": "string"
+            },
+            {
+              "id": "93cef6db-b4c6-45fe-aff0-c5a1dae3e46f",
+              "name": "subject",
+              "value": "Claim Denied",
+              "type": "string"
+            },
+            {
+              "id": "def23d7b-c683-4afc-b200-9525fd6165c6",
+              "name": "body",
+              "value": "Claim CLM123 denied",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -192,
+        -48
+      ],
+      "id": "e39e61fb-a1f9-4f74-81aa-6c6dc7ff8264",
+      "name": "EDIT fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiNode = $node[\"AI Agent\"].json;\nconst original = $node[\"Code in JavaScript\"].json;\n\nlet cleanOutput = aiNode.output\n  .replace(/```json/g, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\nconst parsed = JSON.parse(cleanOutput);\n\nreturn [\n{\njson: {\n\n...original,\n\ncategory: parsed.category,\npriority: parsed.priority,\nconfidence: parsed.confidence,\nreason: parsed.reason\n\n}\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -48
+      ],
+      "id": "c3ef220d-f967-4140-9d93-06eaa6826dca",
+      "name": "AI Classification Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst workItem = {\n\n  ticketId: \"TKT-\" + Date.now(),\n\n  communication: {\n    communicationId: item.json.messageId,\n\n    from: item.json.from,\n    to: item.json.to,\n\n    subject: item.json.subject,\n    body: item.json.body\n  },\n\n  client: {\n    clientId: item.json.clientId,\n    clientName: item.json.clientName\n  },\n\n  classification: {\n    category: item.json.category,\n    priority: item.json.priority,\n    confidence: item.json.confidence,\n    reason: item.json.reason\n  },\n\n  assignment: {\n    assignedTo: null,\n    assignedBy: null,\n    assignmentMode: null,\n    assignedAt: null\n  },\n\n  status: {\n    currentStatus: \"Open\"\n  },\n\n  conversation: [\n  {\n    eventType: \"CLIENT_MESSAGE\",\n\n    communicationId: item.json.messageId,\n\n    channel: \"EMAIL\",\n\n    timestamp: new Date().toISOString(),\n\n    author: item.json.clientName,\n\n    message: item.json.body\n  }\n],\n\n  internalNotes: [],\n\n  attachments: [],\n\n  sla: {\n    status: \"Active\",\n\n    firstResponseAt: null,\n\n    resolvedAt: null,\n\n    escalationLevel: 0\n  },\n\n  audit: {\n    createdAt: new Date().toISOString(),\n    updatedAt: new Date().toISOString()\n  }\n};\n\nreturn [\n{\n  json: workItem\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        -48
+      ],
+      "id": "070fdab4-a5f5-41fb-aee6-47d475d216c2",
+      "name": "Ticket Creation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\n\nitem.json.agentRepository = [\n\n  {\n    agentId: \"AG001\",\n    name: \"John\",\n    specialization: \"Denial Management\",\n    activeTickets: 3,\n    available: true\n  },\n\n  {\n    agentId: \"AG002\",\n    name: \"Sarah\",\n    specialization: \"Denial Management\",\n    activeTickets: 5,\n    available: true\n  },\n\n  {\n    agentId: \"AG003\",\n    name: \"David\",\n    specialization: \"Prior Authorization\",\n    activeTickets: 2,\n    available: true\n  },\n\n  {\n    agentId: \"AG004\",\n    name: \"Lisa\",\n    specialization: \"Eligibility Verification\",\n    activeTickets: 1,\n    available: true\n  },\n  {\n  agentId: \"AG005\",\n  name: \"Mark\",\n  specialization: \"Claim Status\",\n  activeTickets: 2,\n  available: true\n},\n  {\n  agentId: \"AG006\",\n  name: \"Emily\",\n  specialization: \"Patient Balance\",\n  activeTickets: 1,\n  available: true\n},\n{\n  agentId: \"AG007\",\n  name: \"Robert\",\n  specialization: \"Technical Support\",\n  activeTickets: 0,\n  available: true\n}\n];\n\nreturn [\n  {\n    json: item.json\n  }\n];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -48
+      ],
+      "id": "bce8e677-c161-473a-8d55-bae468db874b",
+      "name": "agent repository"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst category =\n  item.json.classification.category;\n\nconst agents =\n  item.json.agentRepository;\n\nconst matchingAgents =\n  agents.filter(\n    agent =>\n      agent.specialization === category &&\n      agent.available === true\n  );\n\nif (matchingAgents.length === 0) {\n\n  item.json.assignment = {\n    assignedTo: null,\n    assignedAgent: null,\n    assignmentMode: \"UNASSIGNED\",\n    reason: \"No available specialist found\"\n  };\n\n  return [\n    {\n      json: item.json\n    }\n  ];\n}\n\nconst selectedAgent =\n  matchingAgents.reduce(\n    (least, current) =>\n      current.activeTickets <\n      least.activeTickets\n        ? current\n        : least\n  );\n\nitem.json.assignment = {\n\n  assignedTo:\n    selectedAgent.agentId,\n\n  assignedAgent:\n    selectedAgent.name,\n\n  assignmentMode:\n    \"CATEGORY_LOAD_BALANCED\",\n\n  assignedAt:\n    new Date().toISOString()\n};\n\nselectedAgent.activeTickets++;\n\nreturn [\n  {\n    json: item.json\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        -48
+      ],
+      "id": "a655ab23-ec87-44a6-84b1-0e1958efd068",
+      "name": "auto assignment engine"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nitem.json.conversation.push({\n    eventType: \"AGENT_RESPONSE\",\n    timestamp: new Date().toISOString(),\n    author: item.json.assignment.assignedAgent,\n    message: \"We are reviewing the denied claim.\"\n});\n\nreturn [\n  {\n    json: item.json\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        -48
+      ],
+      "id": "f33638d8-bf89-42fc-bb57-cbe80ccfbc79",
+      "name": "agent response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst priority =\nitem.json.classification.priority;\n\nlet responseHours;\nlet resolutionHours;\n\nif(priority === \"High\")\n{\n    responseHours = 2;\n    resolutionHours = 8;\n}\nelse if(priority === \"Medium\")\n{\n    responseHours = 8;\n    resolutionHours = 24;\n}\nelse\n{\n    responseHours = 24;\n    resolutionHours = 72;\n}\n\nconst now = new Date();\n\nconst responseDueAt =\nnew Date(\n    now.getTime() +\n    responseHours * 60 * 60 * 1000\n);\n\nconst resolutionDueAt =\nnew Date(\n    now.getTime() +\n    resolutionHours * 60 * 60 * 1000\n);\n\nitem.json.sla.responseDueAt =\nresponseDueAt.toISOString();\n\nitem.json.sla.resolutionDueAt =\nresolutionDueAt.toISOString();\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -48
+      ],
+      "id": "f71d2d62-eb48-4cc0-b244-7bf68dc74b4d",
+      "name": "SLA response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst dashboardRecord = {\n    ticketId: item.json.ticketId,\n\n    category:\n    item.json.classification.category,\n\n    priority:\n    item.json.classification.priority,\n\n    assignedAgent:\n    item.json.assignment.assignedAgent,\n\n    assignedTo:\n    item.json.assignment.assignedTo,\n\n    currentStatus:\n    item.json.status.currentStatus,\n\n    responseDueAt:\n    item.json.sla.responseDueAt,\n\n    resolutionDueAt:\n    item.json.sla.resolutionDueAt\n};\n\nitem.json.managerDashboard =\ndashboardRecord;\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        -48
+      ],
+      "id": "32b7e9a1-ef62-4f11-8ed2-26ba923387da",
+      "name": "manager dashboard"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nconst previousAgent =\nitem.json.assignment.assignedAgent;\n\nconst previousAgentId =\nitem.json.assignment.assignedTo;\n\nconst newAgent = {\n    agentId: \"AG006\",\n    name: \"Emily\"\n};\n\nitem.json.assignment.assignedTo =\nnewAgent.agentId;\n\nitem.json.assignment.assignedAgent =\nnewAgent.name;\n\nitem.json.assignment.reassignedBy =\n\"Manager\";\n\nitem.json.assignment.reassignedAt =\nnew Date().toISOString();\n\nitem.json.assignment.previousAgent =\npreviousAgent;\n\nitem.json.assignment.previousAgentId =\npreviousAgentId;\n\nitem.json.conversation.push({\n    eventType: \"REASSIGNMENT\",\n    timestamp: new Date().toISOString(),\n    author: \"Manager\",\n    message:\n    `Ticket reassigned from ${previousAgent} to ${newAgent.name}`\n});\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        -48
+      ],
+      "id": "52925641-b722-47d7-b99c-3e3ac33247aa",
+      "name": "ticket reassignment"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nitem.json.status.currentStatus =\n\"Resolved\";\n\nitem.json.sla.resolvedAt =\nnew Date().toISOString();\n\nitem.json.conversation.push({\n    eventType: \"RESOLUTION\",\n    timestamp: new Date().toISOString(),\n    author: item.json.assignment.assignedAgent,\n    message: \"Issue resolved and ticket closed.\"\n});\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        -48
+      ],
+      "id": "874f6fdd-cc29-4d28-a49e-47d441993430",
+      "name": "ticket resolution"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nitem.json.auditLog = [\n    {\n        action: \"TICKET_CREATED\",\n        timestamp: item.json.audit.createdAt\n    },\n    {\n        action: \"AUTO_ASSIGNED\",\n        timestamp: item.json.assignment.assignedAt\n    },\n    {\n        action: \"REASSIGNED\",\n        timestamp: item.json.assignment.reassignedAt || null\n    },\n    {\n        action: \"RESOLVED\",\n        timestamp: item.json.sla.resolvedAt\n    }\n];\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2432,
+        -48
+      ],
+      "id": "94e8b265-165d-4a04-9e5d-cdc5aa29d08b",
+      "name": "audit_trial"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nitem.json.managerDashboard = {\n    ticketId: item.json.ticketId,\n\n    category:\n    item.json.classification.category,\n\n    priority:\n    item.json.classification.priority,\n\n    assignedAgent:\n    item.json.assignment.assignedAgent,\n\n    assignedTo:\n    item.json.assignment.assignedTo,\n\n    currentStatus:\n    item.json.status.currentStatus,\n\n    responseDueAt:\n    item.json.sla.responseDueAt,\n\n    resolutionDueAt:\n    item.json.sla.resolutionDueAt\n};\n\nreturn [\n{\n    json: item.json\n}\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        -48
+      ],
+      "id": "887af02a-1178-4197-97b2-ad18fdcbca51",
+      "name": "Dashboard refresh"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\nitem.json.executiveSummary = {\n    ticketId: item.json.ticketId,\n    client: item.json.client.clientName,\n    category: item.json.classification.category,\n    priority: item.json.classification.priority,\n    assignedAgent: item.json.assignment.assignedAgent,\n    status: item.json.status.currentStatus,\n    responseDueAt: item.json.sla.responseDueAt,\n    resolvedAt: item.json.sla.resolvedAt\n};\n\nreturn [{\n    json: item.json\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        -48
+      ],
+      "id": "5b3514c6-1ae1-46c2-afa2-5de2f2fd5412",
+      "name": "Executive Summary Generator"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "EDIT fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "AI Classification Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EDIT fields": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classification Parser": {
+      "main": [
+        [
+          {
+            "node": "Ticket Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ticket Creation": {
+      "main": [
+        [
+          {
+            "node": "agent repository",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent repository": {
+      "main": [
+        [
+          {
+            "node": "auto assignment engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "auto assignment engine": {
+      "main": [
+        [
+          {
+            "node": "agent response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agent response": {
+      "main": [
+        [
+          {
+            "node": "SLA response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SLA response": {
+      "main": [
+        [
+          {
+            "node": "manager dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "manager dashboard": {
+      "main": [
+        [
+          {
+            "node": "ticket reassignment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ticket reassignment": {
+      "main": [
+        [
+          {
+            "node": "ticket resolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ticket resolution": {
+      "main": [
+        [
+          {
+            "node": "audit_trial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "audit_trial": {
+      "main": [
+        [
+          {
+            "node": "Dashboard refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dashboard refresh": {
+      "main": [
+        [
+          {
+            "node": "Executive Summary Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "45f308a8-f3a9-491e-9ae8-98a1eb986494",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "97ee6419473c819fa8c6a36bb0ea04c296405f9184588c52f99fbf6eedf100ff"
+  },
+  "nodeGroups": [],
+  "id": "yBt8Va8dxlvkP7Ei",
+  "tags": []
+}
